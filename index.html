@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Cosmic Journey — 360°</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}
+body{font-family:system-ui,Arial,sans-serif;touch-action:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+#ui{position:fixed;inset:0;pointer-events:none}
+#title{position:absolute;left:50%;bottom:12%;transform:translateX(-50%);
+ color:#eef5ff;text-align:center;font-size:clamp(12px,2.3vw,19px);letter-spacing:.16em;
+ text-shadow:0 0 20px #6da6ff,0 0 50px #355cff;opacity:0;transition:opacity 1s}
+#bar{position:absolute;left:50%;bottom:6%;transform:translateX(-50%);
+ width:min(330px,62vw);height:2px;background:rgba(255,255,255,.13);overflow:hidden}
+#progress{height:100%;width:0;background:rgba(190,220,255,.8);box-shadow:0 0 12px #8ab6ff}
+#hint{position:absolute;top:14px;right:16px;color:#aebdd8;font-size:10px;opacity:.45}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui"><div id="hint">ARRASTRA · MUEVE · TOCA</div><div id="title"></div>
+<div id="bar"><div id="progress"></div></div></div>
+
+<script>
+const C=document.getElementById("c"),X=C.getContext("2d",{alpha:false});
+let W=innerWidth,H=innerHeight,D=1, yaw=0,pitch=0,tyaw=0,tpitch=0,last=0;
+let seed=19, stars=[], dust=[], particles=[];
+function rnd(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296}
+function resize(){D=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
+ C.width=W*D;C.height=H*D;X.setTransform(D,0,0,D,0,0);makeStars()}
+addEventListener("resize",resize);
+
+function makeStars(){
+ stars=[];dust=[];particles=[];
+ for(let i=0;i<1250;i++) stars.push({a:rnd()*6.283,b:(rnd()-.5)*2.0,r:.1+rnd()*2.2,
+  z:rnd(),tw:rnd()*6.28});
+ for(let i=0;i<420;i++) dust.push({x:rnd()*2-1,y:rnd()*2-1,z:rnd(),s:.2+rnd()*1.4});
+ for(let i=0;i<260;i++) particles.push({a:rnd()*6.28,r:rnd(),v:.2+rnd()*1.2,o:rnd()});
+}
+resize();
+
+function lerp(a,b,t){return a+(b-a)*t}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function glow(x,y,r,col,alpha){
+ let g=X.createRadialGradient(x,y,0,x,y,r);
+ g.addColorStop(0,`rgba(${col},${alpha})`);
+ g.addColorStop(.25,`rgba(${col},${alpha*.35})`);
+ g.addColorStop(1,`rgba(${col},0)`);
+ X.fillStyle=g;X.beginPath();X.arc(x,y,r,0,7);X.fill();
+}
+function background(t,energy=1){
+ X.fillStyle="#01020a";X.fillRect(0,0,W,H);
+ let g=X.createRadialGradient(W*.5,H*.45,0,W*.5,H*.45,Math.max(W,H)*.75);
+ g.addColorStop(0,`rgba(17,20,58,${.65*energy})`);
+ g.addColorStop(.42,`rgba(5,9,30,${.55*energy})`);
+ g.addColorStop(1,"#000");
+ X.fillStyle=g;X.fillRect(0,0,W,H);
+
+ // Nebula clouds
+ for(let i=0;i<7;i++){
+  let x=W*(.12+i*.14)+Math.sin(t*.00008+i)*W*.05;
+  let y=H*(.25+(i%3)*.25);
+  glow(x,y,Math.min(W,H)*(.18+i*.015),
+       i%2?"75,100,255":"170,65,180",.035*energy);
+ }
+ // Star sphere with parallax
+ for(const s of stars){
+   let aa=s.a+yaw*(.55+s.z), bb=s.b+pitch*.35;
+   let cp=Math.cos(bb), sx=Math.sin(aa)*cp, sy=Math.sin(bb), sz=Math.cos(aa)*cp;
+   let k=1/(1.15-s.z*.72), x=W*.5+sx*Math.min(W,H)*.55*k;
+   let y=H*.5+sy*Math.min(W,H)*.55*k;
+   let r=s.r*(.5+s.z*1.9);
+   let a=.22+.62*s.z+.18*Math.sin(t*.002+s.tw);
+   if(sz<-.15)a*=.25;
+   X.fillStyle=`rgba(215,228,255,${clamp(a,0,1)})`;
+   X.beginPath();X.arc(x,y,r,0,7);X.fill();
+ }
+ // drifting dust
+ for(const p of dust){
+   let x=W*(.5+p.x*.75)+(mx-px)*0, y=H*(.5+p.y*.75);
+   X.fillStyle=`rgba(120,160,255,${.04+.12*p.z})`;
+   X.fillRect(x,y,p.s,p.s);
+ }
+}
+let mx=.5,my=.5,px=.5,py=.5;
+addEventListener("pointermove",e=>{mx=e.clientX/W;my=e.clientY/H;tyaw+=(mx-.5)*.002;tpitch+=(my-.5)*.001});
+let down=false,lx=0,ly=0;
+addEventListener("pointerdown",e=>{down=true;lx=e.clientX;ly=e.clientY});
+addEventListener("pointerup",()=>down=false);
+addEventListener("pointermove",e=>{if(down){yaw+=(e.clientX-lx)*.003;pitch+=(e.clientY-ly)*.002;lx=e.clientX;ly=e.clientY}});
+addEventListener("wheel",e=>{tyaw+=e.deltaX*.0005});
+
+function starTunnel(t,p){
+ for(let i=0;i<230;i++){
+   let z=(i/230+(t*.00042)%1)%1;
+   let a=i*2.399+t*.0007, rr=(.05+z*z)*Math.min(W,H)*.62;
+   let x=W*.5+Math.cos(a)*rr,y=H*.5+Math.sin(a)*rr*.62;
+   let len=2+z*32;
+   X.strokeStyle=`rgba(170,205,255,${.08+z*.65})`;X.lineWidth=.4+z*1.3;
+   X.beginPath();X.moveTo(x,y);X.lineTo(x-Math.cos(a)*len,y-Math.sin(a)*len*.62);X.stroke();
+ }
+ glow(W*.5,H*.5,Math.min(W,H)*.32,"80,130,255",.12);
+}
+function galaxy(t,zoom=1){
+ const cx=W*.5,cy=H*.5;
+ for(let arm=0;arm<5;arm++)for(let i=0;i<240;i++){
+   let p=i/240,a=p*10.5+arm*1.257+t*.00012;
+   let r=p*Math.min(W,H)*.48*zoom;
+   let jitter=(rnd()-.5)*12;
+   let x=cx+Math.cos(a)*r+jitter,y=cy+Math.sin(a)*r*.38+jitter;
+   X.fillStyle=`rgba(${150+Math.floor(80*p)},${170+Math.floor(65*p)},255,${.08+.42*p})`;
+   X.beginPath();X.arc(x,y,.35+(1-p)*1.6,0,7);X.fill();
+ }
+ glow(cx,cy,Math.min(W,H)*.30*zoom,"90,100,255",.22);
+ glow(cx,cy,Math.min(W,H)*.06*zoom,"255,255,255",.75);
+}
+function sphere(x,y,r,type,t){
+ let stops=type==="earth"?["#bdefff","#2879a8","#06354f","#01040b"]:
+           type==="jupiter"?["#ffe4bc","#bd916d","#795b4a","#161318"]:
+           ["#f3f4ef","#999b9d","#555861","#08090d"];
+ let g=X.createRadialGradient(x-r*.38,y-r*.45,r*.04,x,y,r*1.05);
+ stops.forEach((c,i)=>g.addColorStop(i/(stops.length-1),c));
+ X.fillStyle=g;X.beginPath();X.arc(x,y,r,0,7);X.fill();
+ X.save();X.beginPath();X.arc(x,y,r,0,7);X.clip();
+ if(type==="earth"){
+  for(let i=0;i<14;i++){let yy=y-r+i*r*.16+Math.sin(t*.0005+i)*7;
+   X.strokeStyle=`rgba(220,245,225,${.08+(i%4)*.025})`;X.lineWidth=r*.035;
+   X.beginPath();X.moveTo(x-r,yy);X.bezierCurveTo(x-r*.3,yy-18,x+r*.3,yy+18,x+r,yy-8);X.stroke()}
+ } else if(type==="jupiter"){
+  for(let i=0;i<18;i++){let yy=y-r+i*r*.12;
+   X.fillStyle=`rgba(${110+i*5},${78+i*5},${65+i*4},.20)`;X.fillRect(x-r,yy,r*2,r*.035)}
+ }
+ X.restore();
+ X.strokeStyle=type==="earth"?"rgba(100,200,255,.5)":"rgba(255,255,255,.14)";
+ X.lineWidth=1.5;X.beginPath();X.arc(x,y,r*1.02,0,7);X.stroke();
+}
+function rings(x,y,r,t){
+ X.save();X.translate(x,y);X.rotate(-.18+Math.sin(t*.0002)*.03);
+ for(let i=0;i<5;i++){X.strokeStyle=`rgba(205,195,175,${.16+i*.08})`;X.lineWidth=2+i;
+ X.beginPath();X.ellipse(0,0,r*(1.25+i*.13),r*(.30+i*.025),0,0,7);X.stroke()}
+ X.restore();
+}
+function blackHole(t,p){
+ let cx=W*.5,cy=H*.5,r=Math.min(W,H)*(.105+.04*p);
+ for(let i=0;i<6;i++){let rr=r*(1.25+i*.09);X.strokeStyle=`rgba(255,${150+i*12},55,${.12-i*.012})`;
+  X.lineWidth=2+i;X.beginPath();X.ellipse(cx,cy,rr*2.3,rr*.43,Math.sin(t*.00015)*.08,0,7);X.stroke()}
+ glow(cx,cy,r*2.5,"255,120,35",.18);X.fillStyle="#000";X.beginPath();X.arc(cx,cy,r,0,7);X.fill();
+}
+function scene(t){
+ if(!last)last=t; let dt=t-last;last=t;
+ yaw=lerp(yaw,tyaw,.012);pitch=lerp(pitch,tpitch,.012);
+ let s=(t/1000)%24;
+ let title="",fade=1;
+ background(t,1);
+ if(s<3.4){let p=s/3.4;starTunnel(t,p);title="ENTRA EN EL UNIVERSO"}
+ else if(s<6.8){let p=(s-3.4)/3.4;galaxy(t,1.0+.25*p);title="MILLONES DE ESTRELLAS"}
+ else if(s<10.3){let p=(s-6.8)/3.5;starTunnel(t,p);sphere(W*.52,H*.51,Math.min(W,H)*(.13+.11*p),"earth",t);title="NUESTRO PLANETA"}
+ else if(s<13.5){let p=(s-10.3)/3.2;galaxy(t,.75+p*.25);sphere(W*.50,H*.51,Math.min(W,H)*(.16+.03*p),"jupiter",t);rings(W*.50,H*.51,Math.min(W,H)*(.16+.03*p),t);title="MUNDOS LEJANOS"}
+ else if(s<17.2){let p=(s-13.5)/3.7;starTunnel(t,p);blackHole(t,p);title="MÁS ALLÁ DE LA LUZ"}
+ else if(s<20.5){let p=(s-17.2)/3.3;galaxy(t,.9+p*.5);sphere(W*.55,H*.52,Math.min(W,H)*(.12+.18*p),"moon",t);title="UN VIAJE SIN FINAL"}
+ else {let p=(s-20.5)/3.5;starTunnel(t,p);galaxy(t,1.1+p*.7);title="EL UNIVERSO CONTINÚA…"}
+ document.getElementById("title").textContent=title;
+ document.getElementById("title").style.opacity=title?1:0;
+ document.getElementById("progress").style.width=((s/24)*100)+"%";
+ requestAnimationFrame(scene);
+}
+scene(performance.now());
+</script>
+</body>
+</html>
